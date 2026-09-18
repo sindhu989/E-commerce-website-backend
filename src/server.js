@@ -5,10 +5,22 @@ import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
 
 const app = express()
-app.get("/", (req, res) => {
-  res.send("Backend is running");
-});
-app.use(cors())
+const allowedOrigins = [
+  'https://e-commerce-website-b627hly69-sindhu989.vercel.app',
+  'https://e-commerce-website-3kbdr2lqg-sindhu989.vercel.app',
+]
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true)
+    }
+    callback(new Error('CORS origin not allowed'))
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}))
+app.options('*', cors())
 app.use(express.json())
 const PORT = process.env.PORT || 5000
 const JWT_SECRET = process.env.JWT_SECRET || 'nook-development-secret'
@@ -88,11 +100,8 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nook').then
     { name: 'Everyday T-Shirt', description: 'A breathable heavyweight cotton essential.', price: 599, category: 'Apparel', stock: 24 },
     { name: 'Runner Sneakers', description: 'Lightweight cushioning for everyday miles.', price: 2499, category: 'Footwear', stock: 7 },
   ])
-  app.listen(PORT, () => console.log(`Nook API running on port ${PORT}`))
+  app.listen(PORT, '0.0.0.0', () => console.log(`Nook API running on port ${PORT}`))
 }).catch((error) => { console.error('MongoDB connection failed:', error.message); process.exit(1) })
-app.get("/", (req, res) => {
-  res.send("Backend is running");
-});
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
