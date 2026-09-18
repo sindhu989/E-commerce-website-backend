@@ -5,6 +5,9 @@ import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
 
 const app = express()
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
 app.use(cors())
 app.use(express.json())
 const PORT = process.env.PORT || 5000
@@ -87,3 +90,9 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nook').then
   ])
   app.listen(PORT, () => console.log(`Nook API running on port ${PORT}`))
 }).catch((error) => { console.error('MongoDB connection failed:', error.message); process.exit(1) })
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
