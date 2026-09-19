@@ -3,6 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
+import bcrypt from 'bcryptjs'
 
 const app = express()
 
@@ -10,10 +11,11 @@ const app = express()
 // CORS CONFIGURATION
 // ===============================
 
-const allowedOrigins = [
-  'https://e-commerce-website-b627hly69-sindhu989.vercel.app',
-  'https://e-commerce-website-3kbdr2lqg-sindhu989.vercel.app',
-]
+const allowedOrigins = (process.env.CORS_ORIGINS ||
+  'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 
 app.use(
   cors({
@@ -25,11 +27,6 @@ app.use(
 
       // Allow your Vercel frontend
       if (allowedOrigins.includes(origin)) {
-        return callback(null, true)
-      }
-
-      // Allow Vercel preview deployments
-      if (origin.endsWith('.vercel.app')) {
         return callback(null, true)
       }
 
@@ -53,8 +50,16 @@ app.use(express.json())
 
 const PORT = process.env.PORT || 5000
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || 'nook-development-secret'
+const JWT_SECRET = process.env.JWT_SECRET || (
+  process.env.NODE_ENV === 'production'
+    ? (() => { throw new Error('JWT_SECRET is required in production') })()
+    : 'nook-development-secret'
+)
+const MONGO_URI = process.env.MONGO_URI || (
+  process.env.NODE_ENV === 'production'
+    ? (() => { throw new Error('MONGO_URI is required in production') })()
+    : 'mongodb://127.0.0.1:27017/nook'
+)
 
 // ===============================
 // DATABASE SCHEMAS
@@ -99,7 +104,11 @@ const userSchema = new mongoose.Schema({
     unique: true,
   },
 
-  password: String,
+  password: {
+    type: String,
+    required: true,
+    minlength: 8,
+  },
 
   cart: [cartItemSchema],
 })
@@ -189,17 +198,33 @@ const requireAuth = async (req, res, next) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body
+    const email = req.body.email?.trim().toLowerCase()
+    const password = req.body.password
 
-    const user = await User.findOne({
-      email: email?.toLowerCase(),
-      password,
-    })
+    if (!email || typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({
+        message: 'A valid email and password are required',
+      })
+    }
 
-    if (!user) {
+    const user = await User.findOne({ email })
+    const passwordMatches = user && (
+      user.password.startsWith('$2a$') ||
+      user.password.startsWith('$2b$') ||
+      user.password.startsWith('$2y$')
+        ? await bcrypt.compare(password, user.password)
+        : user.password === password
+    )
+
+    if (!user || !passwordMatches) {
       return res.status(401).json({
         message: 'Invalid email or password',
       })
+    }
+
+    if (!user.password.startsWith('$2')) {
+      user.password = await bcrypt.hash(password, 12)
+      await user.save()
     }
 
     const token = jwt.sign(
@@ -227,6 +252,38 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({
       message: 'Server error',
     })
+  }
+})
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const name = req.body.name?.trim()
+    const email = req.body.email?.trim().toLowerCase()
+    const password = req.body.password
+
+    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ message: 'Name and a valid email are required' })
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' })
+    }
+    if (await User.exists({ email })) {
+      return res.status(409).json({ message: 'An account with this email already exists' })
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      password: await bcrypt.hash(password, 12),
+      cart: [],
+    })
+
+    res.status(201).json({
+      user: { id: user._id, name: user.name, email: user.email },
+    })
+  } catch (error) {
+    console.error('Registration error:', error)
+    res.status(500).json({ message: 'Unable to create account' })
   }
 })
 
@@ -565,10 +622,7 @@ app.get(
 // ===============================
 
 mongoose
-  .connect(
-    process.env.MONGO_URI ||
-      'mongodb://127.0.0.1:27017/nook'
-  )
+  .connect(MONGO_URI)
   .then(async () => {
     console.log('MongoDB connected')
 
@@ -577,7 +631,7 @@ mongoose
       await User.create({
         name: 'Alex Morgan',
         email: 'user@example.com',
-        password: 'password123',
+        password: await bcrypt.hash('password123', 12),
         cart: [],
       })
 
